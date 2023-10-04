@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { match } from "@formatjs/intl-localematcher";
 import Negotiator from "negotiator";
-import { i18n } from "../i18n.config";
+import i18n from "../i18n.config";
+import { getRewritesFromBackend } from "../getRewritesFromBackend";
 
 function getLocale(request) {
 	// Negotiator expects plain object so we need to transform headers
@@ -19,15 +20,17 @@ function getLocale(request) {
 	return locale;
 }
 
-export function middleware(request) {
+export async function middleware(request) {
 	const pathname = request.nextUrl.pathname;
+	const rewrites = await getRewritesFromBackend();
 
 	// Check if the default locale is in the pathname
 	if (pathname.startsWith(`/${i18n.defaultLocale}`) || pathname === `/${i18n.defaultLocale}`) {
+		console.log("in Default locale", pathname);
 		// e.g. incoming request is /en/products
 		// The new URL is now /products
 		return NextResponse.redirect(
-			new URL(pathname.replace(`/${i18n.defaultLocale}`, pathname === `/${i18n.defaultLocale}` ? "/" : ``), request.url)
+			new URL(pathname.replace(`/${i18n.defaultLocale}`, pathname === `/${i18n.defaultLocale}` ? "/" : ``), request.nextUrl)
 		);
 	}
 
@@ -36,15 +39,29 @@ export function middleware(request) {
 
 	// Redirect if there is no locale
 	if (pathnameIsMissingLocale) {
-		const locale = getLocale(request);
+		// const userLocale = getLocale(request);
+		const userLocale = "fr-CH";
+		console.log("pathnameIsMissingLocale", pathname);
 
-		if (locale === i18n.defaultLocale) {
-			return NextResponse.rewrite(new URL(`/${i18n.defaultLocale}${pathname}`, request.url));
+		if (pathname in rewrites) {
+			const { rewriteUrl, locale } = rewrites[pathname];
+			// Choose which page template to use
+			return NextResponse.rewrite(new URL(`/${locale}${rewriteUrl}`, request.nextUrl));
+		}
+
+		if (userLocale === i18n.defaultLocale) {
+			return NextResponse.rewrite(new URL(`/${i18n.defaultLocale}${pathname}`, request.nextUrl));
 		}
 
 		// e.g. incoming request is /products
 		// The new URL is now /en-US/products
-		return NextResponse.redirect(new URL(`/${locale}${pathname.startsWith("/") ? "" : "/"}${pathname}`, request.url));
+		// return NextResponse.redirect(new URL(`/${userLocale}${pathname.startsWith("/") ? "" : "/"}${pathname}`, request.nextUrl));
+	} else {
+		if (pathname in rewrites) {
+			const { rewriteUrl, locale } = rewrites[pathname];
+			// Choose which page template to use
+			return NextResponse.rewrite(new URL(`/${locale}${rewriteUrl}`, request.nextUrl));
+		}
 	}
 }
 
